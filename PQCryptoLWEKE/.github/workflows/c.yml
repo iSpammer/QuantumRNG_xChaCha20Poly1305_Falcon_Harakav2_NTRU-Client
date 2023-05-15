@@ -1,0 +1,127 @@
+name: Test C implementation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/c.yml'
+      - Makefile
+      - 'KAT/**'
+      - 'src/**'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/c.yml'
+      - Makefile
+      - 'KAT/**'
+      - 'src/**'
+      - 'tests/**'
+
+jobs:
+  test-basic:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        generation_a: ['AES128', 'SHAKE128']
+        opt_level: ['REFERENCE', 'FAST_GENERIC', 'FAST']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      env: 
+        GENERATION_A: ${{ matrix.generation_a }}
+        OPT_LEVEL: ${{ matrix.opt_level }}
+      run: make
+    - name: Frodo640
+      run: make test640
+    - name: Frodo976
+      run: make test976
+    - name: Frodo1344
+      run: make test1344
+    - name: Frodo640-AES KATs
+      if: ${{ matrix.generation_a == 'AES128' }}
+      run: frodo640/PQCtestKAT_kem
+    - name: Frodo640-SHAKE KATs
+      if: ${{ matrix.generation_a == 'SHAKE128' }}
+      run: frodo640/PQCtestKAT_kem_shake
+    - name: Frodo976-AES KATs
+      if: ${{ matrix.generation_a == 'AES128' }}
+      run: frodo976/PQCtestKAT_kem
+    - name: Frodo976-SHAKE KATs
+      if: ${{ matrix.generation_a == 'SHAKE128' }}
+      run: frodo976/PQCtestKAT_kem_shake
+    - name: Frodo1344-AES KATs
+      if: ${{ matrix.generation_a == 'AES128' }}
+      run: frodo1344/PQCtestKAT_kem
+    - name: Frodo1344-SHAKE KATs
+      if: ${{ matrix.generation_a == 'SHAKE128' }}
+      run: frodo1344/PQCtestKAT_kem_shake
+  test-sanitize:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        generation_a: ['AES128', 'SHAKE128']
+        opt_level: ['REFERENCE', 'FAST_GENERIC', 'FAST']
+        sanitizer: ['address', 'undefined']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      env:
+        GENERATION_A: ${{ matrix.generation_a }}
+        OPT_LEVEL: ${{ matrix.opt_level }}
+        EXTRA_CFLAGS: -g3 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fsanitize=${{ matrix.sanitizer }} -fno-sanitize-recover=${{ matrix.sanitizer }}
+      run: make CC=clang-11
+    - name: Frodo640
+      run: frodo640/test_KEM nobench
+    - name: Frodo976
+      run: frodo976/test_KEM nobench
+    - name: Frodo1344
+      run: frodo1344/test_KEM nobench
+  test-valgrind-constant-time:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        generation_a: ['AES128', 'SHAKE128']
+        opt_level: ['REFERENCE', 'FAST_GENERIC', 'FAST']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install valgrind
+      run: sudo apt-get install -y valgrind
+    - name: Build
+      env:
+        DO_VALGRIND_CHECK: "TRUE"
+        GENERATION_A: ${{ matrix.generation_a }}
+        OPT_LEVEL: ${{ matrix.opt_level }}
+      run: make CC=clang-11
+    - name: Frodo640
+      env: 
+        DO_VALGRIND_CHECK: "TRUE"
+      run: make test640
+    - name: Frodo976
+      env: 
+        DO_VALGRIND_CHECK: "TRUE"
+      run: make test976
+    - name: Frodo1344
+      env: 
+        DO_VALGRIND_CHECK: "TRUE"
+      run: make test1344
+  test-ppc:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        generation_a: ['AES128', 'SHAKE128']
+        opt_level: ['REFERENCE']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install Docker and QEMU
+      run: sudo apt-get install -y qemu
+    - name: Register qemu-user-static
+      run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+    - name: Run tests in container
+      env:
+        GENERATION_A: ${{ matrix.generation_a }}
+        OPT_LEVEL: ${{ matrix.opt_level }}
+      run: |
+        docker run --rm -v $PWD:$PWD -w $PWD pqclean/ci-container:unstable-ppc /bin/bash -c "\
+        make ARCH=PPC GENERATION_A=${{ matrix.generation_a }} USE_OPENSSL=FALSE OPT_LEVEL=${{ matrix.opt_level }} && \
+        make test640 && \
+        make test976 && \
+        make test1344"
