@@ -107,9 +107,9 @@ def printstate(s):
         else:
             q = [s[0][i], s[0][i + 4], s[0][i + 8], s[0][i + 12],
                  s[1][i], s[1][i + 4], s[1][i + 8], s[1][i + 12]]
-        print(" ".join([hexbyte(x) for x in q]))
+        # print(" ".join([hexbyte(x) for x in q]))
     # print q
-    print("")
+    # print("")
 
 
 # multiply by 2 over GF(2^128)
@@ -195,9 +195,9 @@ def haraka512256(msg):
     s = [msg[i:i + 16] for i in [0, 16, 32, 48]]
     rcon = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-    print
-    "= input state ="
-    printstate(s)
+    # print
+    # "= input state ="
+    # printstate(s)
 
     # apply round functions
     for t in range(ROUNDS):
@@ -205,22 +205,22 @@ def haraka512256(msg):
         for m in range(AES_ROUNDS):
             s = [aesenc(s[i], convRC(RC[4 * t * AES_ROUNDS + 4 * m + i])) for i in range(4)]
 
-        print("= round %d : after aes layer =" % (t))
+        # print("= round %d : after aes layer =" % (t))
         printstate(s)
 
         # now apply mixing
         s = mix512(s)
 
-        print("= round %d : after mix layer =" % (t))
+        # print("= round %d : after mix layer =" % (t))
         printstate(s)
 
-    print("= output from permutation =")
+    # print("= output from permutation =")
     printstate(s)
 
     # apply feed-forward
     s = [xor(s[i], msg[16 * i:16 * (i + 1)]) for i in range(4)]
 
-    print("= after feed-forward =")
+    # print("= after feed-forward =")
     printstate(s)
 
     # truncation

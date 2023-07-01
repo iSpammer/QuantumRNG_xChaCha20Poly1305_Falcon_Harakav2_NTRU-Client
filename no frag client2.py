@@ -1,5 +1,4 @@
 # Import scapy and random modules
-import base64
 import hashlib
 import json
 import os
@@ -15,7 +14,7 @@ import struct
 from NTRU import ntru
 import pyspx.haraka_256f
 from falcon import falcon
-from scapy.layers.inet import IP, TCP
+from scapy.layers.inet import IP
 # import pyspx.haraka_256f
 # Define the server IP and port
 from harakav2 import *
@@ -23,9 +22,6 @@ import ast
 
 server_ip = "192.168.68.139"
 server_port = 4449
-
-
-# qrng_nonce = b'\xb8\x08\x9c\xd2\xea\xbe\xf7\x1e\xac\xf1\xd6$'
 class EncryptedTCP(Packet):
     name = "EncryptedTCP"
     fields_desc = [
@@ -48,6 +44,10 @@ class EncryptedTCP(Packet):
         # StrFixedLenField("EncNonce", b"Nonce", 12),
     ]
 
+# Bind the custom layer to the IP layer in top-down direction
+bind_layers(IP, EncryptedTCP, proto=99)
+
+# qrng_nonce = b'\xb8\x08\x9c\xd2\xea\xbe\xf7\x1e\xac\xf1\xd6$'
 
 def sign_fn(payload, qrng, header):
     cipher = ChaCha20_Poly1305.new(key=shared_secret, nonce=qrng)
@@ -71,10 +71,10 @@ def sign_fn(payload, qrng, header):
 def check_signature(payload):
     # try:
     b64 = json.loads(payload)
-    print("payload", payload)
+    print("payload",payload)
     jk = ['nonce', 'header', 'ciphertext', 'tag']
     jv = {k: b64decode(b64[k]) for k in jk}
-    print("nonce is ", jv['nonce'])
+    print("nonce is ",jv['nonce'])
     cipher = ChaCha20_Poly1305.new(key=shared_secret, nonce=jv['nonce'])
     cipher.update(jv['header'])
     plaintext = cipher.decrypt_and_verify(jv['ciphertext'], jv['tag'])
@@ -97,27 +97,23 @@ def check_signature(payload):
     # except (ValueError, KeyError):
     #     print("Incorrect decryption")
 
-
-# Bind the custom layer to the IP layer in top-down direction
-bind_layers(IP, EncryptedTCP, proto=99)
-
+client_ip = "192.168.68.143"
 # Generate a random source port for the client
 client_port = random.randint(1024, 65535)
+ip_pkt = IP(dst=server_ip, proto=99)
 
 # Create a TCP SYN packet with the server as the destination
-syn = IP(dst=server_ip, proto=99) / EncryptedTCP(flags="S")
-print("sending ", syn[EncryptedTCP].sport)
+syn = ip_pkt/ EncryptedTCP(flags="S")
+
 # Send the SYN packet and receive the SYN-ACK packet from the server
-syn_ack = sr1(syn)
-print("sent")
+syn_ack = sr(syn)
 
 # Create a TCP ACK packet to complete the handshake
-ack = IP(dst=server_ip, proto=99) / EncryptedTCP(flags="A", ack=syn_ack[EncryptedTCP].seq + 1)
+ack = ip_pkt / EncryptedTCP(flags="A")
 # Create a TCP socket
-s = conf.L3socket()
 
 # Send the ACK packet and receive the 700 bytes message from the server
-msg1 = s.sr1(ack)
+msg1 = sr1(ack)
 print("sent tcp, getting pub from server", msg1.show())
 # Check if the message length is 700 bytes
 if len(msg1[Raw].load) >= 0:
@@ -147,19 +143,16 @@ if len(msg1[Raw].load) >= 0:
     print("Alice's Random Polynomial  : ", ranPol)
     reply1 = Alice.encrypt(message, ranPol)
     print("Encrypted Message          : ", reply1)
-    print("seq ",ack[EncryptedTCP].seq,"  ack ", msg1[EncryptedTCP].seq+ len(msg1[Raw].load),"asd ", str(reply1))
+
     # Create a TCP packet with the reply text as the payload
-    pkt1 = IP(dst=server_ip, proto=99) / EncryptedTCP(flags="PA", seq=ack[EncryptedTCP].seq,
-                                            ack=msg1[EncryptedTCP].seq + len(msg1[Raw].load)) / str(reply1)
-    # pkt1 = IP(dst=server_ip, proto=99) / EncryptedTCP(dport=server_port, sport=client_port, flags="PA", seq=0,
-    #                                ack=0 + len(msg1[Raw].load)) / str(reply1)
+    pkt1 = ip_pkt / EncryptedTCP(flags="PA") / str(reply1)
     # Send the packet and receive the 100 bytes message from the server
     print("sending client cipher")
-
-    msg2 = s.sr1(pkt1)
+    send(pkt1)
+    msg2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
 
     # Check if the message length is 100 bytes
-    if len(msg2[Raw].payload) > 10:
+    if len(msg2[Raw].load) > 10:
 
         print("Encrypted String           : ", msg2[Raw].load)
 
@@ -173,56 +166,51 @@ if len(msg1[Raw].load) >= 0:
         print("got server hash", blockhash)
         print("enc hash : ", msg2[Raw].load)
 
+
         # TODO implement Blockchain/SSI and add hash/verifier
         # Create a message of around 100 bytes
         msg3 = b"This is a message of around 100 bytes.\n"
         msg3 = sign_fn(msg3, header=b"client_hash", qrng=qrng_nonce)
         # Create a TCP packet with the message as the payload
-        pkt2 = IP(dst=server_ip) / TCP(dport=server_port, sport=client_port, flags="PA",
-                                       seq=pkt1.seq + len(pkt1[TCP].payload),
-                                       ack=msg2.seq + len(msg2[TCP].payload)) / msg3
+        pkt2 = ip_pkt / EncryptedTCP(flags="PA",) / msg3
         # Send the packet and receive the 100 bytes message from the server
         print("sending client hash")
-        msg4 = s.sr1(pkt2)
-
+        send(pkt2)
+        # msg4 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
+        msg4 = ip_pkt
         # qrng_nonce = msg2[TCP].options[0][1]
-
+        print("besmallah")
         # Check if the message length is 100 bytes
-        if len(msg4[TCP].payload) >= 0:
+        if msg4 != None:
             # Enter a loop to exchange messages with the server until bye is sent or received
             while True:
                 # Prompt the user to enter a message to send to the server
                 user_msg = input("Enter a message to send to the server: ")
-                user_msg_enc = sign_fn(user_msg.encode(),
-                                       header=b"data_exchange_" + str(random.randint(-99, 99)).encode(),
+                user_msg_enc = sign_fn(user_msg.encode(), header=b"data_exchange_" + str(random.randint(-99, 99)).encode(),
                                        qrng=qrng_nonce)
 
                 # Check if the user message contains bye
                 if "bye" in user_msg.lower():
                     # Create a TCP FIN packet to close the connection
-                    fin = IP(dst=server_ip) / TCP(dport=server_port, sport=client_port, flags="FA",
-                                                  seq=pkt2.seq + len(pkt2[TCP].payload),
-                                                  ack=msg4.seq + len(msg4[TCP].payload))
+                    fin = IP(dst=server_ip) / EncryptedTCP(flags="FA",)
                     # Send the FIN packet and receive the FIN-ACK packet from the server
-                    fin_ack = s.sr1(fin)
+                    send(fin)
+                    # fin_ack = sniff(filter=f"ip and host {client_ip}", count=1)[0]
                     # Create a TCP ACK packet to acknowledge the FIN-ACK packet
-                    ack_fin = IP(dst=server_ip) / TCP(dport=server_port, sport=client_port, flags="A", seq=fin_ack.ack,
-                                                      ack=fin_ack.seq + 1)
+                    ack_fin = IP(dst=server_ip) / EncryptedTCP(flags="A")
                     # Send the ACK packet and exit the loop
-                    s.send(ack_fin)
+                    send(ack_fin)
                     break
                 else:
                     # Create a TCP packet with the user message as the payload
-                    pkt3 = IP(dst=server_ip) / TCP(dport=server_port, sport=client_port, flags="PA",
-                                                   seq=pkt2.seq + len(pkt2[TCP].payload),
-                                                   ack=msg4.seq + len(msg4[TCP].payload)) / user_msg_enc
+                    pkt3 = IP(dst=server_ip) / EncryptedTCP(flags="PA") / user_msg_enc
                     # Send the packet and receive the reply from the server
                     print("sending....")
-                    s.send(pkt3)
-                    reply2 = s.recv()
+                    send(pkt3)
+                    reply2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
                     if reply2 == None:
                         while reply2 == None:
-                            reply2 = s.recv()
+                            reply2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
 
                     print("sent!, receving...", reply2.show())
                     # reply_dec = cipher.decrypt(qrng_nonce, reply2[Raw].load)
