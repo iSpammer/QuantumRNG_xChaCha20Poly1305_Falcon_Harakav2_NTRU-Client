@@ -103,7 +103,7 @@ client_port = random.randint(1024, 65535)
 ip_pkt = IP(dst=server_ip, proto=99)
 
 # Create a TCP SYN packet with the server as the destination
-syn = ip_pkt/ EncryptedTCP(flags="S")
+syn = ip_pkt/ EncryptedTCP(flags="S", reserved=7)
 
 # Send the SYN packet and receive the SYN-ACK packet from the server
 syn_ack = sr(syn)
@@ -113,6 +113,8 @@ ack = ip_pkt / EncryptedTCP(flags="A")
 # Create a TCP socket
 
 # Send the ACK packet and receive the 700 bytes message from the server
+# send(ack)
+# msg1 = sniff(filter=f"ip and src {server_ip}", count=1)[0]
 msg1 = sr1(ack)
 print("sent tcp, getting pub from server", msg1.show())
 # Check if the message length is 700 bytes
@@ -150,7 +152,8 @@ if len(msg1[Raw].load) >= 0:
     print("sending client cipher")
     send(pkt1)
     msg2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
-
+    # msg2 = sr1(pkt1)
+    print("sent & received")
     # Check if the message length is 100 bytes
     if len(msg2[Raw].load) > 10:
 
