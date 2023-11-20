@@ -1,4 +1,5 @@
 # Import scapy and random modules
+import base64
 import hashlib
 import json
 import os
@@ -21,7 +22,44 @@ from scapy.layers.inet import IP
 # Define the server IP and port
 from harakav2 import *
 import ast
+import numpy as np
 
+server_pki = np.load("client_pki.npz", allow_pickle=True)
+pub_key_s_h = server_pki["pub_key_s"].tolist()
+country = server_pki["country"] # Country name
+state_code = server_pki["state_code"] # State or province name
+state = server_pki["state"] # Locality name
+org = server_pki["org"] # Organization name
+org_unit = server_pki["org_unit"] # Organizational unit name
+cname = server_pki["cname"] # Common name
+email = server_pki["email"] # Email address
+# pub_key_s=server_pki['pub_key_s_h']
+secret_h=server_pki['secret_h']
+secret_f=server_pki['secret_f']
+secret_g=server_pki["secret_g"]
+
+print("country ",country)
+print("state_code ",state_code)
+print("state ",state)
+print("org ",org)
+print("org_unit ",org_unit)
+print("cname ",cname)
+print("email ",email)
+print("pub_key_s_h ",type(pub_key_s_h))
+print("secret_h ",secret_h)
+print("secret_f ",secret_f)
+print("secret_g ",secret_g)
+
+data = {
+    "country": country,
+    "state_code": state_code,
+    "state": state,
+    "org": org,
+    "org_unit": org_unit,
+    "cname": cname,
+    "email": email,
+    "pub_key_s_h": pub_key_s_h
+}
 server_ip = "192.168.68.139"
 server_port = 4449
 class EncryptedTCP(Packet):
@@ -160,7 +198,6 @@ if len(msg1[Raw].load) >= 0:
     if len(msg2[Raw].load) > 10:
 
         print("Encrypted String           : ", msg2[Raw].load)
-
         # Alice decrypts the encrypted string with the shared secret using XOR
         # shared_secret = hashlib.sha256(bytes(message)).hexdigest()
         message = pad_message(bytes(message))
@@ -169,13 +206,17 @@ if len(msg1[Raw].load) >= 0:
         # server_nonce = msg2[TCP].options[0][1]
         blockhash, check, qrng_nonce = check_signature(msg2[Raw].load)
         print("got server hash", blockhash)
+        print("Reply from hash: " + (blockhash.decode()))
+
         print("enc hash : ", msg2[Raw].load)
-        # request_handler.get_request(blockhash)
+        print("PKI HASH VERIFICATION STATUS ",request_handler.get_request(ast.literal_eval(blockhash.decode())))
 
 
         # TODO implement Blockchain/SSI and add hash/verifier
         # Create a message of around 100 bytes
-        msg3 = b"This is a message of around 100 bytes.\n"
+        msg3 = json.dumps(pub_key_s_h)
+        msg3 = bytes(msg3, 'utf-8')
+        # msg3 = b"This is a message of around 100 bytes.\n"
         msg3 = sign_fn(msg3, header=b"client_hash", qrng=qrng_nonce)
         # Create a TCP packet with the message as the payload
         pkt2 = ip_pkt / EncryptedTCP(flags="PA",) / msg3
