@@ -24,42 +24,27 @@ from harakav2 import *
 import ast
 import numpy as np
 
-server_pki = np.load("client_pki.npz", allow_pickle=True)
-pub_key_s_h = server_pki["pub_key_s"].tolist()
-country = server_pki["country"] # Country name
-state_code = server_pki["state_code"] # State or province name
-state = server_pki["state"] # Locality name
-org = server_pki["org"] # Organization name
-org_unit = server_pki["org_unit"] # Organizational unit name
-cname = server_pki["cname"] # Common name
-email = server_pki["email"] # Email address
-# pub_key_s=server_pki['pub_key_s_h']
-secret_h=server_pki['secret_h']
-secret_f=server_pki['secret_f']
-secret_g=server_pki["secret_g"]
+data_client = np.load('client_cert.npy',allow_pickle='TRUE').item()
+pub_key = data_client['pub_key_s_h']
+priv_key_sf = data_client['sk_f']
+priv_key_sg = data_client['sk_g']
+# print("country ", country)
+# print("state_code ", state_code)
+# print("state ", state)
+# print("org ", org)
+# print("org_unit ", org_unit)
+# print("cname ", cname)
+# print("email ", email)
+print("pub_key_s_h ", (pub_key))
+print("priv_key_sf ", (priv_key_sf))
+print("priv_key_sg ", (priv_key_sg))
 
-print("country ",country)
-print("state_code ",state_code)
-print("state ",state)
-print("org ",org)
-print("org_unit ",org_unit)
-print("cname ",cname)
-print("email ",email)
-print("pub_key_s_h ",type(pub_key_s_h))
-print("secret_h ",secret_h)
-print("secret_f ",secret_f)
-print("secret_g ",secret_g)
+Challenge = ntru.Ntru(7, 29, 491531)
+Challenge.genPublicKey(priv_key_sf,priv_key_sg, 2)
 
-data = {
-    "country": country,
-    "state_code": state_code,
-    "state": state,
-    "org": org,
-    "org_unit": org_unit,
-    "cname": cname,
-    "email": email,
-    "pub_key_s_h": pub_key_s_h
-}
+
+
+
 server_ip = "192.168.68.139"
 server_port = 4449
 class EncryptedTCP(Packet):
@@ -108,34 +93,45 @@ def sign_fn(payload, qrng, header):
     return result
 
 
-def check_signature(payload):
+def check_signature(payload, challenge=False):
     # try:
-    b64 = json.loads(payload)
-    print("payload",payload)
-    jk = ['nonce', 'header', 'ciphertext', 'tag']
-    jv = {k: b64decode(b64[k]) for k in jk}
-    print("nonce is ",jv['nonce'])
-    cipher = ChaCha20_Poly1305.new(key=shared_secret, nonce=jv['nonce'])
-    cipher.update(jv['header'])
-    plaintext = cipher.decrypt_and_verify(jv['ciphertext'], jv['tag'])
-    print("plaintext", plaintext)
-    # print("The message was: " + plaintext.decode())
-    blockhash, sign_str, pk_arr, qrng_nonce_client = plaintext.split(b'<|>')
-    sign_str = bytes(sign_str)
-    # dec_hash = dec_hash.decode("UTF-8")
-    print("dec hash : ", blockhash)
+    if challenge:
+        print("mafrod y5osh hena ")
+        b64 = json.loads(payload)
 
-    pk_fn = falcon.PublicKey(n=32, h=list(struct.unpack('>' + 'h' * (len(pk_arr) // 2), pk_arr)))
-    # print("verification status = ", pyspx.haraka_256f.verify(dec_hash, signature, pub_key))
-    check = pk_fn.verify(blockhash, bytes(sign_str))
-    # Create a message of around 100 bytes
-    print("verification status " + str(check))
+        plaintext = Challenge.decrypt(b64['ciphertext'])
+        if plaintext == [1, 0, 1, 0, 1, 1, 2]:
+            return True
+        else:
+            return False
+    else:
+        print("pay",payload)
+        b64 = json.loads(payload)
+        print("payload",payload)
+        jk = ['nonce', 'header', 'ciphertext', 'tag']
+        jv = {k: b64decode(b64[k]) for k in jk}
+        print("nonce is ",jv['nonce'])
+        cipher = ChaCha20_Poly1305.new(key=shared_secret, nonce=jv['nonce'])
+        cipher.update(jv['header'])
+        plaintext = cipher.decrypt_and_verify(jv['ciphertext'], jv['tag'])
+        print("plaintext", plaintext)
+        # print("The message was: " + plaintext.decode())
+        blockhash, sign_str, pk_arr, qrng_nonce_client = plaintext.split(b'<|>')
+        sign_str = bytes(sign_str)
+        # dec_hash = dec_hash.decode("UTF-8")
+        print("dec hash : ", blockhash)
 
-    # dec_hash_sign = cipher.decrypt(qrng, payload)
-    print("decrypted hash+sig ", blockhash)
-    return blockhash, check, qrng_nonce_client
-    # except (ValueError, KeyError):
-    #     print("Incorrect decryption")
+        pk_fn = falcon.PublicKey(n=32, h=list(struct.unpack('>' + 'h' * (len(pk_arr) // 2), pk_arr)))
+        # print("verification status = ", pyspx.haraka_256f.verify(dec_hash, signature, pub_key))
+        check = pk_fn.verify(blockhash, bytes(sign_str))
+        # Create a message of around 100 bytes
+        print("verification status " + str(check))
+
+        # dec_hash_sign = cipher.decrypt(qrng, payload)
+        print("decrypted hash+sig ", blockhash)
+        return blockhash, check, qrng_nonce_client
+        # except (ValueError, KeyError):
+        #     print("Incorrect decryption")
 
 client_ip = "192.168.68.143"
 # Generate a random source port for the client
@@ -190,14 +186,18 @@ if len(msg1[Raw].load) >= 0:
     pkt1 = ip_pkt / EncryptedTCP(flags="PA") / str(reply1)
     # Send the packet and receive the 100 bytes message from the server
     print("sending client cipher")
+    # send(pkt1)
+    # frags_msg2 = sniff(filter=f"ip and host {client_ip}", count=6)
+    # print("frags ",len(frags_msg2))
+    # msg2 = defragment(frags_msg2)[0]
+    #
     send(pkt1)
     msg2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
-    # msg2 = sr1(pkt1)
     print("sent & received")
     # Check if the message length is 100 bytes
     if len(msg2[Raw].load) > 10:
 
-        print("Encrypted String           : ", msg2[Raw].load)
+        print("Encrypted String           : ", len(msg2[Raw].load))
         # Alice decrypts the encrypted string with the shared secret using XOR
         # shared_secret = hashlib.sha256(bytes(message)).hexdigest()
         message = pad_message(bytes(message))
@@ -209,19 +209,19 @@ if len(msg1[Raw].load) >= 0:
         print("Reply from hash: " + (blockhash.decode()))
 
         print("enc hash : ", msg2[Raw].load)
-        print("PKI HASH VERIFICATION STATUS ",request_handler.get_request(ast.literal_eval(blockhash.decode())))
+        print("PKI HASH VERIFICATION STATUS ",request_handler.get_request(server_ip, qrng_nonce, ip_pkt, ast.literal_eval(blockhash.decode())))
 
 
         # TODO implement Blockchain/SSI and add hash/verifier
         # Create a message of around 100 bytes
-        msg3 = json.dumps(pub_key_s_h)
+        msg3 = json.dumps(pub_key)
         msg3 = bytes(msg3, 'utf-8')
         # msg3 = b"This is a message of around 100 bytes.\n"
         msg3 = sign_fn(msg3, header=b"client_hash", qrng=qrng_nonce)
         # Create a TCP packet with the message as the payload
         pkt2 = ip_pkt / EncryptedTCP(flags="PA",) / msg3
         # Send the packet and receive the 100 bytes message from the server
-        print("sending client hash")
+        print("sending client hashx", msg3)
         send(pkt2)
         # msg4 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
         msg4 = ip_pkt
@@ -254,10 +254,10 @@ if len(msg1[Raw].load) >= 0:
                     # Send the packet and receive the reply from the server
                     print("sending....")
                     send(pkt3)
-                    reply2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
+                    reply2 = sniff(filter=f"ip and src 192.168.68.139 and dst 192.168.68.143", count=1)[0]
                     if reply2 == None:
                         while reply2 == None:
-                            reply2 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
+                            reply2 = sniff(filter=f"ip and src 192.168.68.139 and dst 192.168.68.143", count=1)[0]
 
                     print("sent!, receving...", reply2.show())
                     # reply_dec = cipher.decrypt(qrng_nonce, reply2[Raw].load)

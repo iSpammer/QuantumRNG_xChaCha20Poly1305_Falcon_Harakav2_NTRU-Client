@@ -1,8 +1,83 @@
 # Import the requests module
 import ast
+import base64
+import random
 import sys
 
 import requests
+from scapy.layers.inet import IP
+from scapy.packet import Raw
+from scapy.sendrecv import send, sniff
+
+from NTRU import ntru
+from encrypted_tcp import EncryptedTCP
+from falcon import falcon
+from harakav2 import haraka512256
+from Crypto.Cipher import ChaCha20_Poly1305
+import struct
+from base64 import b64encode, b64decode
+import json
+import numpy as np
+import numpy as np
+
+
+data_ca = np.load('client_cert.npy',allow_pickle='TRUE').item()
+print(data_ca)
+print("country ",data_ca['country'])
+print("state_code ",data_ca['state_code'])
+print("state ",data_ca['state'])
+print("org ",data_ca['org'])
+print("org_unit ",data_ca['org_unit'])
+print("cname ",data_ca['cname'])
+print("email ",data_ca['email'])
+print("pub_key_s_h ",data_ca['pub_key_s_h'])
+
+country = data_ca['country']
+state_code = data_ca['state_code']
+state= data_ca['state']
+org = data_ca['org']
+org_unit = data_ca['org_unit']
+cname = data_ca['cname']
+email = data_ca['email']
+pub_key = data_ca['pub_key_s_h']
+priv_key_sf = data_ca['sk_f']
+priv_key_sg = data_ca['sk_g']
+
+
+print("country ", country)
+print("state_code ", state_code)
+print("state ", state)
+print("org ", org)
+print("org_unit ", org_unit)
+print("cname ", cname)
+print("email ", email)
+print("pub_key_s_h_xd ", (pub_key))
+print("priv_key_sf ", (priv_key_sf))
+print("priv_key_sg ", (priv_key_sg))
+
+Challenge = ntru.Ntru(7, 29, 491531)
+Challenge.genPublicKey(priv_key_sf,priv_key_sg, 2)
+
+challenge_creator = ntru.Ntru(7, 29, 491531)
+
+
+def sign_fn(shared_secret, payload):
+    challenge_creator.setPublicKey(shared_secret)
+    ciphertext = challenge_creator.encrypt(payload, [-1, -1, 1, 1])
+    print("cifer is ",ciphertext)
+    # payload = cipher.encrypt(qrng, payload)
+    return str(ciphertext)+"<|>"+str(pub_key)
+
+
+def check_signature(payload):
+    # try:
+    print("mafrod y5osh hena ", payload)
+
+    plaintext = Challenge.decrypt(ast.literal_eval(payload.decode()))
+    if plaintext == [1, 0, 1, 0, 1, 2, 1]:
+        return True
+    else:
+        return False
 
 # Define a class that handles the requests
 class RequestHandler:
@@ -16,16 +91,20 @@ class RequestHandler:
     # Define a method that sends a post request with some data
     def post_request(self, data):
         # Send a post request to the server with the data
-        response = requests.post(f"http://{self.server_address}:{self.server_port}/", data=data)
+        response = requests.post(f"https://{self.server_address}:{self.server_port}/", data=data, verify=False)
 
         # Print the status code and the content of the response
         print(f"Status code: {response.status_code}")
         print(f"Content: {response.text}")
 
     # Define a method that sends a get request
-    def get_request(self, server_pub):
+    def get_request(self, server_ip, qrng_nonce, ip_pkt, server_pub):
+        print("hab3at lel pki ", server_pub)
         # Send a get request to the server
-        response = requests.get(f"http://{self.server_address}:{self.server_port}/chain_details_get?hashid={server_pub}")
+        lnk = f"https://{self.server_address}:{self.server_port}/chain_details_get"
+        print("rabet ", lnk)
+        data = {"hashidd": server_pub}
+        response = requests.post(lnk, json=json.dumps(data), verify=False)
 
         # Print the status code and the content of the response
         print(f"Status code: {response.status_code}")
@@ -34,11 +113,10 @@ class RequestHandler:
             return False
         print(f"Content: {response.text}")
         # Import the json module
-        import json
 
         # Define the output as a string
         resp = response.text.strip("\\")
-        print("asd! ",resp)
+        print("asd! ", resp)
         # Parse the output as a JSON object
         output = json.loads(response.text)
 
@@ -62,8 +140,10 @@ class RequestHandler:
             nonce = block["nonce"]
             hashid = block["hashid"]
             timestamp = block["timestamp"]
+            import binascii
 
-            pub_key_s_h = transactions["pub_key_s_h"]
+            pub_key_s_h_sr = transactions["pub_key_s_h"]
+            # pub_key_s_h = binascii.b2a_base64(pub_key_s_h).decode('ascii')
 
             # Print the block details
             print(f"Block number: {block_number}")
@@ -72,12 +152,36 @@ class RequestHandler:
             print(f"Nonce: {nonce}")
             print(f"Hashid: {hashid}")
             print(f"Timestamp: {timestamp}")
-            print(f"Public Key {pub_key_s_h}")
-            print(f"Public Key type {type(pub_key_s_h)}")
+            print(f"Public Key from PKI{pub_key_s_h_sr}")
+            print(f"Public Key type {type(pub_key_s_h_sr)}")
             print(f"server Key {type(server_pub)}")
 
+            print("pub received from server", server_pub)
+
+            print("pub received from PKI", pub_key_s_h_sr)
+
             print()
-            if server_pub == pub_key_s_h:
+            if server_pub == pub_key_s_h_sr:
+
+                # Decode the ASCII bytes using binascii.a2b_base64()
+                print("restored_bytes2", server_pub)
+                print("sending random challenge to protect from replay attacks")
+                challenge = sign_fn(shared_secret=server_pub, payload = [1, 0, 1, 0, 1, 2, 1])
+
+                challenge_pkt = ip_pkt / EncryptedTCP(flags="PA") / str(challenge)
+
+                send(challenge_pkt)
+
+                challenge_rply = sniff(filter="ip and src 192.168.68.139 and dst 192.168.68.143", count=1)[0]
+                print("challenge reply msg : ", challenge_rply.summary())
+                print("cumming 4om",challenge_rply[IP].src)
+
+                challenge_status = check_signature((challenge_rply[Raw].load))
+                if(challenge_status):
+                    print("PASSED")
+                else:
+                    print("YADEENOMY")
+                # msg4 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
                 return True
             else:
                 print('UNVERIFIABLE HASH TERMINATING NOW')
@@ -91,6 +195,7 @@ class RequestHandler:
 
         # Call the get request method
         self.get_request()
+
 
 # Create an instance of the RequestHandler class with the server address and port
 request_handler = RequestHandler("192.168.0.18", 5000)
