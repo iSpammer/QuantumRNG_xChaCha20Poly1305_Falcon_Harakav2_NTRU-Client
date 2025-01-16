@@ -60,7 +60,6 @@ Challenge.genPublicKey(priv_key_sf,priv_key_sg, 2)
 
 challenge_creator = ntru.Ntru(7, 29, 491531)
 
-
 def sign_fn(shared_secret, payload):
     challenge_creator.setPublicKey(shared_secret)
     ciphertext = challenge_creator.encrypt(payload, [-1, -1, 1, 1])
@@ -182,6 +181,97 @@ class RequestHandler:
                 else:
                     print("YADEENOMY")
                 # msg4 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
+                return True
+            else:
+                print('UNVERIFIABLE HASH TERMINATING NOW')
+                sys.exit()
+                return False
+
+
+    def get_request_udp(self, server_ip, port, server_pub):
+        print("hab3at lel pki ", server_pub)
+        # Send a get request to the server
+        lnk = f"https://{server_ip}:{port}/chain_details_get"
+        print("rabet ", lnk)
+        data = {"hashidd": server_pub}
+        response = requests.post(lnk, json=json.dumps(data), verify=False)
+
+        # Print the status code and the content of the response
+        print(f"Status code: {response.status_code}")
+        if response.status_code != 200:
+            print("COMMUNICATION FAILED!")
+            return False
+        print(f"Content: {response.text}")
+        # Import the json module
+
+        # Define the output as a string
+        resp = response.text.strip("\\")
+        print("asd! ", resp)
+        # Parse the output as a JSON object
+        output = json.loads(response.text)
+
+        # Get the chain and the length from the output
+        chain = output["chain"]
+        length = output["len"]
+
+        # Print the chain length
+        print(f"The chain length is {length}")
+        # if(length > 1)
+        #     return True;
+        # Loop through the chain
+        for block in chain:
+            # Parse the block as a JSON object
+            block = json.loads(block)
+
+            # Get the block details
+            block_number = block["block_number"]
+            transactions = block["transactions"]
+            previous_hash = block["previous_hash"]
+            nonce = block["nonce"]
+            hashid = block["hashid"]
+            timestamp = block["timestamp"]
+            import binascii
+
+            pub_key_s_h_sr = transactions["http"]
+            # pub_key_s_h = binascii.b2a_base64(pub_key_s_h).decode('ascii')
+
+            # Print the block details
+            print(f"Block number: {block_number}")
+            print(f"Transactions: {transactions}")
+            print(f"Previous hash: {previous_hash}")
+            print(f"Nonce: {nonce}")
+            print(f"Hashid: {hashid}")
+            print(f"Timestamp: {timestamp}")
+            print(f"Public Key from PKI{pub_key_s_h_sr}")
+            print(f"Public Key type {type(pub_key_s_h_sr)}")
+            print(f"server Key {type(server_pub)}")
+
+            print("pub received from server", server_pub)
+
+            print("pub received from PKI", pub_key_s_h_sr)
+
+            print()
+            if server_pub == pub_key_s_h_sr:
+
+                # # Decode the ASCII bytes using binascii.a2b_base64()
+                # print("restored_bytes2", server_pub)
+                # print("sending random challenge to protect from replay attacks")
+                # challenge = sign_fn(shared_secret=server_pub, payload = [1, 0, 1, 0, 1, 2, 1])
+                #
+                # challenge_pkt = ip_pkt / EncryptedTCP(flags="PA") / str(challenge)
+                #
+                # send(challenge_pkt)
+                #
+                # challenge_rply = sniff(filter="ip and src 192.168.68.139 and dst 192.168.68.143", count=1)[0]
+                # print("challenge reply msg : ", challenge_rply.summary())
+                # print("cumming 4om",challenge_rply[IP].src)
+                #
+                # challenge_status = check_signature((challenge_rply[Raw].load))
+                # if(challenge_status):
+                #     print("PASSED")
+                # else:
+                #     print("YADEENOMY")
+                # # msg4 = sniff(filter=f"ip and host {client_ip}", count=1)[0]
                 return True
             else:
                 print('UNVERIFIABLE HASH TERMINATING NOW')
